@@ -4,6 +4,7 @@ import (
 	"crypto/tls"
 	"flag"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"path/filepath"
@@ -27,7 +28,7 @@ type fetcher struct {
 	method  string
 	url     string
 	headers []string
-	body    []byte
+	body    io.Reader
 
 	ignoreSSLErr bool
 	showHeader   bool
@@ -61,7 +62,9 @@ func (f *fetcher) Run() error {
 		request.Header.Add(header[0], strings.TrimSpace(header[1]))
 	}
 	request.SetRequestURI(f.url)
-	request.SetBodyRaw(f.body)
+	if f.body != nil {
+		request.SetBodyStream(f.body, -1)
+	}
 
 	resp := new(fasthttp.Response)
 	if !f.showContent {
@@ -112,8 +115,12 @@ func main() {
 		}
 	}
 
-	if *postData != "" {
-		f.body = []byte(*postData)
+	if stat, _ := os.Stdin.Stat(); stat.Mode()&os.ModeCharDevice == 0 {
+		// read data from pipe
+		f.body = os.Stdin
+	} else if *postData != "" {
+		// read data from params
+		f.body = strings.NewReader(*postData)
 		hasContentType := false
 		for _, header := range f.headers {
 			if strings.HasPrefix(strings.ToLower(header), "content-type:") {
